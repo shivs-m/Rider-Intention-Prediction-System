@@ -1,6 +1,3 @@
-Here’s a clean and professional README.md file you can copy directly into your repository.
-It’s written in a way that’s clear, well-structured, and ideal for your Render deployment and honours-level project submission.
-
 ⸻
 
 
