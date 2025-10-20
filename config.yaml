@@ -1,0 +1,22 @@
+data:
+  root: "data/features/resnet50"
+  view: "frontal_view"
+
+classes:
+  - Left Lane Change
+  - Right Lane Change
+  - Left Turn
+  - Right Turn
+  - Slow-Stop
+  - Straight
+
+train:
+  batch_size: 16
+  epochs: 10
+  lr: 3e-4
+  seed: 42
+
+model:
+  lstm_hidden: 512
+  lstm_layers: 1
+  bidirectional: true

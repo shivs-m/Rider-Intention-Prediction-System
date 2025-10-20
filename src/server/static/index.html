@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Rider Intention Prediction</title>
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    .grid-badges { display:grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap:.5rem; }
+    @media (max-width: 640px){ .grid-badges { grid-template-columns: repeat(3, minmax(0,1fr)); } }
+  </style>
+</head>
+<body class="h-full bg-slate-50 text-slate-900 transition-colors" id="body">
+  <div class="max-w-5xl mx-auto p-6 space-y-6">
+
+    <!-- Header -->
+    <header class="flex items-center justify-between flex-wrap gap-3">
+      <div>
+        <h1 class="text-2xl font-semibold tracking-tight">Rider Intention Prediction</h1>
+        <p class="text-sm text-slate-600">Upload a <code>.npy</code> file or provide a feature path to predict the rider's maneuver.</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="modelInfo" class="text-xs text-slate-500"></span>
+        <button id="themeBtn" class="rounded-xl px-3 py-2 text-sm border border-slate-300 hover:bg-slate-100">🌗 Theme</button>
+      </div>
+    </header>
+
+    <!-- Card -->
+    <section class="bg-white rounded-2xl shadow border border-slate-200 p-5 space-y-5">
+
+      <!-- Upload / Path Row -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 items-end">
+        <!-- Drag & Drop -->
+        <div class="lg:col-span-2">
+          <label class="block text-sm font-medium mb-1">Upload feature file (.npy)</label>
+          <div id="drop"
+               class="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:border-indigo-400 transition cursor-pointer">
+            <p class="text-slate-500">
+              Drag & drop a file here or <span class="text-indigo-600 underline">click to choose</span>
+            </p>
+            <input id="file" type="file" accept=".npy" class="hidden" />
+          </div>
+
+          <!-- File metadata badge -->
+          <div id="fileMeta" class="mt-2 text-sm text-slate-600 hidden">
+            <span class="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                   stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                   d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375H9.75a3.375 3.375 0 00-3.375 3.375V14.25M16.5 11.25v6m-9-6v6M3 19.5h18" /></svg>
+              <span id="fileName">No file selected</span>
+            </span>
+            <button id="clearBtn" class="ml-2 text-xs text-slate-500 underline">clear</button>
+          </div>
+        </div>
+
+        <!-- Path and Predict button -->
+        <div class="flex flex-col gap-2">
+          <label class="block text-sm font-medium mb-1">Or use feature path</label>
+          <input id="npyPath" type="text" placeholder="e.g. val/frontal_view/Right Turn/file.npy"
+                 class="w-full rounded-lg border-slate-300 text-sm px-3 py-2" />
+          <button id="predictBtn"
+                  class="px-4 py-2 mt-1 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50">
+            🔍 Predict
+          </button>
+          <p class="text-xs text-slate-500">Use this if your file already exists on the server.</p>
+        </div>
+      </div>
+
+      <!-- Clip length -->
+      <div class="flex flex-wrap items-center gap-3">
+        <label class="text-sm">Clip length</label>
+        <input id="clipLen" type="number" value="64" min="16" max="256" step="16"
+               class="w-24 rounded-lg border-slate-300 text-sm" />
+      </div>
+
+      <!-- Status -->
+      <div id="status" class="text-sm text-slate-600 h-5"></div>
+
+      <!-- Results -->
+      <div id="result" class="hidden space-y-4">
+        <!-- Headline -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="bg-slate-50 rounded-xl p-4 border border-slate-200">
+            <div class="text-xs uppercase text-slate-500 mb-1">Predicted Label</div>
+            <div id="predLabel" class="text-lg font-semibold">—</div>
+            <div class="text-sm text-slate-600">Confidence: <span id="predConf">—</span></div>
+          </div>
+          <div class="bg-slate-50 rounded-xl p-4 border border-slate-200 sm:col-span-2">
+            <div class="text-xs uppercase text-slate-500 mb-2">One-Hot</div>
+            <div id="oneHotGrid" class="grid-badges"></div>
+          </div>
+        </div>
+
+        <!-- Chart -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-4">
+          <div class="flex items-center justify-between">
+            <div class="text-xs uppercase text-slate-500">Class Probabilities</div>
+            <div class="text-xs text-slate-500">Classes: <span id="classesList"></span></div>
+          </div>
+          <canvas id="probsChart" height="220"></canvas>
+        </div>
+
+        <!-- Stats + History -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <!-- Stats -->
+          <div class="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <div class="text-xs uppercase text-slate-500">Prediction Stats</div>
+              <button id="downloadBtn"
+                      class="text-xs px-3 py-1 rounded-lg border border-slate-300 hover:bg-slate-50">
+                ⬇️ Download JSON
+              </button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 text-sm">
+              <div class="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                <div class="text-xs text-slate-500">Latency</div>
+                <div id="statLatency" class="font-semibold">—</div>
+              </div>
+              <div class="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                <div class="text-xs text-slate-500">Clip length</div>
+                <div id="statClip" class="font-semibold">—</div>
+              </div>
+              <div class="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                <div class="text-xs text-slate-500">Confidence margin</div>
+                <div id="statMargin" class="font-semibold">—</div>
+              </div>
+              <div class="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                <div class="text-xs text-slate-500">Entropy (norm.)</div>
+                <div id="statEntropy" class="font-semibold">—</div>
+              </div>
+              <div class="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                <div class="text-xs text-slate-500">Mean / Std</div>
+                <div id="statMeanStd" class="font-semibold">—</div>
+              </div>
+              <div class="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                <div class="text-xs text-slate-500">Source</div>
+                <div id="statSource" class="font-semibold truncate">—</div>
+              </div>
+            </div>
+
+            <div>
+              <div class="text-xs uppercase text-slate-500 mb-1">Top-3 classes</div>
+              <ul id="top3" class="text-sm list-disc pl-5 space-y-0.5"></ul>
+            </div>
+          </div>
+
+          <!-- History -->
+          <div class="bg-white rounded-2xl border border-slate-200 p-4">
+            <div class="flex items-center justify-between">
+              <div class="text-xs uppercase text-slate-500">Recent Predictions</div>
+              <button id="clearHist" class="text-xs text-slate-500 underline">clear history</button>
+            </div>
+            <ul id="history" class="mt-2 space-y-1 text-sm text-slate-700"></ul>
+          </div>
+        </div>
+
+        <!-- Sorted table (optional) -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-4">
+          <div class="text-xs uppercase text-slate-500 mb-2">All classes (sorted)</div>
+          <table class="w-full text-sm">
+            <thead class="text-slate-500">
+              <tr><th class="text-left">Class</th><th class="text-right">Probability</th></tr>
+            </thead>
+            <tbody id="sortedTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <footer class="text-center text-xs text-slate-500">© Rider Intention — FastAPI + PyTorch (MPS)</footer>
+  </div>
+
+  <script>
+    // ---------- Theme ----------
+    const body = document.getElementById('body');
+    const themeBtn = document.getElementById('themeBtn');
+    function applyTheme() {
+      const dark = localStorage.getItem('rip_theme') === 'dark';
+      body.classList.toggle('bg-slate-900', dark);
+      body.classList.toggle('text-slate-100', dark);
+      body.classList.toggle('bg-slate-50', !dark);
+      body.classList.toggle('text-slate-900', !dark);
+    }
+    themeBtn.addEventListener('click', () => {
+      const cur = localStorage.getItem('rip_theme');
+      localStorage.setItem('rip_theme', cur === 'dark' ? 'light' : 'dark');
+      applyTheme();
+    });
+    applyTheme();
+
+    // ---------- Elements ----------
+    const drop = document.getElementById('drop');
+    const fileInput = document.getElementById('file');
+    const fileMeta = document.getElementById('fileMeta');
+    const fileNameEl = document.getElementById('fileName');
+    const clearBtn = document.getElementById('clearBtn');
+    const npyPathEl = document.getElementById('npyPath');
+    const predictBtn = document.getElementById('predictBtn');
+    const statusEl = document.getElementById('status');
+    const resultEl = document.getElementById('result');
+    const predLabelEl = document.getElementById('predLabel');
+    const predConfEl = document.getElementById('predConf');
+    const classesListEl = document.getElementById('classesList');
+    const oneHotGrid = document.getElementById('oneHotGrid');
+    const modelInfoEl = document.getElementById('modelInfo');
+    const historyEl = document.getElementById('history');
+    const clipLenEl = document.getElementById('clipLen');
+    const statLatency = document.getElementById('statLatency');
+    const statClip = document.getElementById('statClip');
+    const statMargin = document.getElementById('statMargin');
+    const statEntropy = document.getElementById('statEntropy');
+    const statMeanStd = document.getElementById('statMeanStd');
+    const statSource = document.getElementById('statSource');
+    const top3El = document.getElementById('top3');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const sortedTable = document.getElementById('sortedTable');
+    let chart, lastResult = null;
+
+    // ---------- Helpers ----------
+    function setBusy(b) {
+      predictBtn.disabled = b;
+      predictBtn.textContent = b ? '⏳ Predicting…' : '🔍 Predict';
+      statusEl.textContent = b ? 'Running inference...' : '';
+    }
+    function setFileName(name) {
+      if (name) { fileMeta.classList.remove('hidden'); fileNameEl.textContent = name; }
+      else { fileMeta.classList.add('hidden'); fileNameEl.textContent = 'No file selected'; }
+    }
+    function pushHistory(item) {
+      const hist = JSON.parse(localStorage.getItem('rip_hist') || '[]');
+      hist.unshift(item);
+      localStorage.setItem('rip_hist', JSON.stringify(hist.slice(0, 5)));
+      renderHistory();
+    }
+    function renderHistory() {
+      const hist = JSON.parse(localStorage.getItem('rip_hist') || '[]');
+      historyEl.innerHTML = '';
+      hist.forEach(h => {
+        const li = document.createElement('li');
+        li.className = 'flex items-center justify-between';
+        li.innerHTML = `
+          <span class="truncate">${h.name}</span>
+          <span class="ml-2 px-2 py-0.5 text-xs rounded-lg ${h.ok ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">
+            ${h.label || h.error}
+          </span>`;
+        historyEl.appendChild(li);
+      });
+    }
+    document.getElementById('clearHist').addEventListener('click', ()=>{
+      localStorage.removeItem('rip_hist'); renderHistory();
+    });
+
+    function renderOneHot(classes, oneHot) {
+      oneHotGrid.innerHTML = '';
+      classes.forEach((c, i) => {
+        const active = oneHot[i] === 1;
+        const div = document.createElement('div');
+        div.className = `text-xs text-center rounded-lg px-2 py-2 border ${active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-100 text-slate-700 border-slate-200'}`;
+        div.textContent = c;
+        oneHotGrid.appendChild(div);
+      });
+    }
+
+    function entropy(probs) {
+      let h = 0;
+      for (const p of probs) if (p > 0) h -= p * Math.log2(p);
+      return h;
+    }
+
+    function formatPct(x) { return (x * 100).toFixed(1) + '%'; }
+
+    function fillStats(data, clipLen, sourceName, latencyMs) {
+      // Top-3
+      const pairs = data.classes.map((c, i) => ({ c, p: data.probs[i] }));
+      pairs.sort((a,b)=>b.p - a.p);
+      const top3 = pairs.slice(0,3);
+      top3El.innerHTML = '';
+      top3.forEach(t => {
+        const li = document.createElement('li');
+        li.textContent = `${t.c}: ${formatPct(t.p)}`;
+        top3El.appendChild(li);
+      });
+
+      // Margin, entropy, mean/std
+      const p1 = top3[0]?.p ?? 0, p2 = top3[1]?.p ?? 0;
+      const margin = p1 - p2;
+      const H = entropy(data.probs);
+      const Hmax = Math.log2(data.classes.length);
+      const Hnorm = Hmax ? (H / Hmax) : 0;
+      const mean = data.probs.reduce((a,b)=>a+b,0) / data.probs.length;
+      const variance = data.probs.reduce((a,b)=>a + Math.pow(b - mean,2), 0) / data.probs.length;
+      const std = Math.sqrt(variance);
+
+      statLatency.textContent = latencyMs.toFixed(0) + ' ms';
+      statClip.textContent = clipLen.toString();
+      statMargin.textContent = (margin*100).toFixed(1) + '%';
+      statEntropy.textContent = `${H.toFixed(3)} (${(Hnorm*100).toFixed(1)}%)`;
+      statMeanStd.textContent = `${mean.toFixed(3)} / ${std.toFixed(3)}`;
+      statSource.textContent = sourceName;
+
+      // Sorted table
+      sortedTable.innerHTML = '';
+      pairs.forEach(({c,p}) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="py-1">${c}</td><td class="py-1 text-right">${formatPct(p)}</td>`;
+        sortedTable.appendChild(tr);
+      });
+    }
+
+    // ---------- Drag & Drop ----------
+    drop.addEventListener('click', () => fileInput.click());
+    ['dragenter','dragover'].forEach(evt =>
+      drop.addEventListener(evt, e => { e.preventDefault(); drop.classList.add('border-indigo-400'); })
+    );
+    ['dragleave','drop'].forEach(evt =>
+  drop.addEventListener(evt, e => { e.preventDefault(); drop.classList.remove('border-indigo-400'); })
+);
+    drop.addEventListener('drop', e => {
+      const f = e.dataTransfer.files?.[0];
+      if (f && f.name.endsWith('.npy')) {
+        fileInput.files = e.dataTransfer.files;
+        setFileName(f.name);
+      }
+    });
+    fileInput.addEventListener('change', e => {
+      const f = e.target.files?.[0];
+      setFileName(f ? f.name : '');
+    });
+    clearBtn.addEventListener('click', ()=>{
+      fileInput.value = ''; setFileName('');
+    });
+
+    // ---------- Health info (model details) ----------
+    fetch('/healthz').then(r=>r.json()).then(d=>{
+      if (d && d.model_hidden !== undefined) {
+        modelInfoEl.textContent = `hidden=${d.model_hidden}, layers=${d.model_layers}, bi=${d.model_bidirectional ? 'yes' : 'no'}, feat_dim=${d.feat_dim}`;
+      }
+    });
+
+    // ---------- Predict ----------
+    async function predict() {
+      setBusy(true); resultEl.classList.add('hidden');
+      const t0 = performance.now();
+      try {
+        const fd = new FormData();
+        const clipLen = parseInt(clipLenEl.value || '64', 10);
+        let usingFile = false;
+
+        if (fileInput.files?.[0]) {
+          fd.append('file', fileInput.files[0]);
+          usingFile = true;
+        }
+        const path = npyPathEl.value.trim();
+        const url = usingFile
+          ? `/predict_feature?clip_len=${clipLen}`
+          : path
+            ? `/predict_feature?npy_path=${encodeURIComponent(path)}&clip_len=${clipLen}`
+            : null;
+
+        if (!url) { statusEl.textContent = 'Please upload a file or enter a valid path.'; setBusy(false); return; }
+
+        const resp = await fetch(url, { method: 'POST', body: usingFile ? fd : null });
+        const data = await resp.json();
+        const t1 = performance.now();
+        const latencyMs = t1 - t0;
+        if (!resp.ok) throw new Error(data.error || 'Prediction failed');
+
+        lastResult = data;
+
+        // UI fill
+        predLabelEl.textContent = data.label;
+        predConfEl.textContent = formatPct(data.confidence);
+        classesListEl.textContent = data.classes.join(', ');
+        renderOneHot(data.classes, data.one_hot);
+        resultEl.classList.remove('hidden');
+
+        // Chart
+        const ctx = document.getElementById('probsChart').getContext('2d');
+        if (chart) chart.destroy();
+        chart = new Chart(ctx, {
+          type: 'bar',
+          data: { labels: data.classes, datasets: [{ label: 'Probability', data: data.probs, backgroundColor: '#6366f1aa' }] },
+          options: {
+            responsive: true,
+            scales: { y: { beginAtZero: true, max: 1.0 } },
+            plugins: {
+              legend: { display: false },
+              tooltip: { callbacks: { label: (c)=> formatPct(c.raw) } }
+            }
+          }
+        });
+
+        // Stats
+        const sourceName = usingFile ? (fileInput.files[0]?.name || 'upload.npy') : (path || 'npy_path');
+        fillStats(data, clipLen, sourceName, latencyMs);
+
+        // History
+        pushHistory({ name: sourceName, label: data.label, ok: true });
+
+        statusEl.textContent = 'Prediction complete.';
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = 'Error: ' + err.message;
+        lastResult = null;
+        pushHistory({ name: fileInput.files?.[0]?.name || npyPathEl.value || 'unknown', error: err.message, ok: false });
+      } finally {
+        setBusy(false);
+      }
+    }
+    predictBtn.addEventListener('click', predict);
+
+    // ---------- Download JSON ----------
+    downloadBtn.addEventListener('click', ()=>{
+      if (!lastResult) return;
+      const blob = new Blob([JSON.stringify(lastResult, null, 2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'prediction.json'; a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // Initial
+    renderHistory();
+  </script>
+</body>
+</html>
