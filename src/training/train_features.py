@@ -1,4 +1,4 @@
-# src/training/train_features.py
+
 import os, yaml, argparse
 import numpy as np
 from collections import Counter
@@ -36,8 +36,8 @@ def collate_fixed_len(batch, T_out: int):
     """Ensures all sequences in a batch are of equal temporal length."""
     xs, ys = zip(*batch)
     xs = [_resample_to_len(x, T_out) for x in xs]
-    x = torch.stack(xs, dim=0)             # (B, T_out, D)
-    y = torch.tensor(ys, dtype=torch.long) # (B,)
+    x = torch.stack(xs, dim=0)             
+    y = torch.tensor(ys, dtype=torch.long) 
     return x, y
 
 
@@ -122,7 +122,7 @@ def main():
     cfg_lr = float(cfg["train"]["lr"]) if args.lr is None else float(args.lr)
     opt = optim.Adam(model.parameters(), lr=cfg_lr, weight_decay=args.weight_decay)
 
-    # Remove "verbose" because some PyTorch MPS builds don't support it
+    
     sched = optim.lr_scheduler.ReduceLROnPlateau(
         opt,
         mode="max",

@@ -27,9 +27,9 @@ def predict_path(npy_path: str, clip_len: int = 64):
 
     # use the same robust loader inside dataset
     from features.dataset import _load_npy_features
-    arr = _load_npy_features(npy_path)          # (T, D)
-    x = torch.from_numpy(arr)                   # (T, D)
-    x = _resample_to_len(x, clip_len).unsqueeze(0)  # (1, T, D)
+    arr = _load_npy_features(npy_path)          
+    x = torch.from_numpy(arr)                   
+    x = _resample_to_len(x, clip_len).unsqueeze(0)  
 
     with torch.no_grad():
         probs = torch.softmax(model(x), dim=1)[0].numpy().tolist()
@@ -37,12 +37,11 @@ def predict_path(npy_path: str, clip_len: int = 64):
     return CLASS_NAMES[idx], float(max(probs)), probs
 
 if __name__ == "__main__":
-    # pick any validation file path here:
-    # e.g. data/features/resnet50/val/frontal_view/Left Turn/XXXXX.npy
+    
     sample = None
     cfg = load_config()
     val_view = os.path.join(cfg["data"]["root"], "val", cfg["data"]["view"])
-    # try first file from first class
+    
     for cname in CLASS_NAMES:
         cdir = os.path.join(val_view, cname)
         if os.path.isdir(cdir):
